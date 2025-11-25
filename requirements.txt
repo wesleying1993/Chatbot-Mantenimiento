@@ -3,3 +3,4 @@ openai
 langchain==0.1.0
 pypdf2
 faiss-cpu
+tiktoken
