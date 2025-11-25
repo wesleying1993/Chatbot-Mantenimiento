@@ -1,14 +1,14 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from PyPDF2 import PdfReader
 import os
 
 # Configuración
-st.set_page_config(page_title="IA Mtto", layout="wide")
-st.title("📘 IA Mtto")
+st.set_page_config(page_title="IA chat de Mtto", layout="wide")
+st.title("📘 IA chat de Mtto")
 
-# Configurar API Key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Inicializar cliente OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Subir PDF
 uploaded_file = st.file_uploader("Sube tu manual en PDF", type="pdf")
@@ -27,9 +27,9 @@ if uploaded_file:
     if question:
         with st.spinner("Consultando IA..."):
             prompt = f"Responde la siguiente pregunta usando el texto del manual:\n\nTexto:\n{text}\n\nPregunta:\n{question}"
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # más rápido y económico
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0
             )
-            st.write("**Respuesta:**", response.choices[0].message["content"])
+            st.write("**Respuesta:**", response.choices[0].message.content)
