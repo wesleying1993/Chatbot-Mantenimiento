@@ -1,4 +1,4 @@
 streamlit
 openai
 langchain
-pypdf
+pypdf2
