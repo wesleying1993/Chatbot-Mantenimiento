@@ -1,44 +1,35 @@
 import streamlit as st
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.chat_models import ChatOpenAI
-from langchain.chains import RetrievalQA
+import openai
 from PyPDF2 import PdfReader
 import os
 
-# Configuración de la página
-st.set_page_config(page_title="Chat con Manual PDF", layout="wide")
-st.title("📘 Chatbot IA para Manuales en PDF")
+# Configuración
+st.set_page_config(page_title="Chat con PDF", layout="wide")
+st.title("📘 Chat simple con PDF")
+
+# Configurar API Key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Subir PDF
-uploaded_file = st.file_uploader("Sube el manual en PDF", type="pdf")
+uploaded_file = st.file_uploader("Sube tu manual en PDF", type="pdf")
 
 if uploaded_file:
-    # Extraer texto del PDF
     pdf_reader = PdfReader(uploaded_file)
     text = ""
     for page in pdf_reader.pages:
         text += page.extract_text()
 
-    st.success("Texto extraído del PDF ✅")
+    st.success("Texto extraído ✅")
 
-    # Dividir texto en fragmentos
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = splitter.split_text(text)
-
-    # Crear embeddings y base vectorial
-    embeddings = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
-    vectorstore = FAISS.from_texts(chunks, embeddings)
-
-    # Crear el chatbot con recuperación
-    llm = ChatOpenAI(openai_api_key=os.getenv("OPENAI_API_KEY"), temperature=0)
-    qa = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
-
-    st.subheader("💬 Haz tu pregunta sobre el manual")
-    question = st.text_input("Escribe tu pregunta aquí:")
+    st.subheader("💬 Haz tu pregunta")
+    question = st.text_input("Escribe tu pregunta:")
 
     if question:
-        with st.spinner("Buscando respuesta..."):
-            answer = qa.run(question)
-        st.write("**Respuesta:**", answer)
+        with st.spinner("Consultando IA..."):
+            prompt = f"Responde la siguiente pregunta usando el texto del manual:\n\nTexto:\n{text}\n\nPregunta:\n{question}"
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+            st.write("**Respuesta:**", response.choices[0].message["content"])
