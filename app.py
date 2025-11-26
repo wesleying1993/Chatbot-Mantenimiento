@@ -1,14 +1,32 @@
 import streamlit as st
 import openai
 from PyPDF2 import PdfReader
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import os
 
 # Configuración de la página
 st.set_page_config(page_title="IA Mantenimiento", layout="wide")
 st.title("🔧 Plataforma IA para Mantenimiento")
 
-# Configurar API Key
+# Configurar API Key OpenAI
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Conexión con Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# Si usas Streamlit Cloud con Secrets:
+creds_dict = st.secrets["google"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+
+# Si usas local:
+# creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+
+client = gspread.authorize(creds)
+
+# Abrir hojas
+sheet_mtto = client.open("MiBaseMtto").worksheet("Mantenimientos")
+sheet_refacciones = client.open("MiBaseMtto").worksheet("Refacciones")
 
 # Crear pestañas
 tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Manual", "Mantenimientos", "Refacciones"])
@@ -52,7 +70,6 @@ with tab1:
 # ===========================
 with tab2:
     st.header("📘 Manual del equipo")
-    st.write("Aquí puedes mostrar el manual completo o secciones importantes.")
     st.info("Sube el PDF en la pestaña Chatbot para verlo aquí.")
     if uploaded_file:
         st.download_button("Descargar Manual", data=uploaded_file.read(), file_name="manual.pdf")
@@ -61,25 +78,20 @@ with tab2:
 # TAB 3: Mantenimientos
 # ===========================
 with tab3:
-    st.header("🛠 Mantenimientos Preventivos")
-    st.write("Lista de mantenimientos programados:")
-    st.table([
-        {"Fecha": "2025-12-01", "Actividad": "Cambio de filtros"},
-        {"Fecha": "2026-01-15", "Actividad": "Lubricación general"},
-        {"Fecha": "2026-02-10", "Actividad": "Revisión eléctrica"}
-    ])
+    st.header("🛠 Mantenimientos Preventivos y Realizados")
+    st.subheader("Preventivos:")
+    preventivos = [row for row in sheet_mtto.get_all_records() if row["Tipo"] == "Preventivo"]
+    st.table(preventivos)
 
-    st.subheader("Historial de mantenimientos realizados:")
-    st.table([
-        {"Fecha": "2025-10-20", "Actividad": "Revisión de válvulas"},
-        {"Fecha": "2025-09-05", "Actividad": "Cambio de aceite"}
-    ])
+    st.subheader("Realizados:")
+    realizados = [row for row in sheet_mtto.get_all_records() if row["Tipo"] == "Realizado"]
+    st.table(realizados)
 
 # ===========================
 # TAB 4: Refacciones
 # ===========================
 with tab4:
     st.header("🔩 Lista de Refacciones")
-    st.image("https://via.placeholder.com/150", caption="Filtro de aceite")
-    st.image("https://via.placeholder.com/150", caption="Bomba hidráulica")
-    st.image("https://via.placeholder.com/150", caption="Sensor de presión")
+    refacciones = sheet_refacciones.get_all_records()
+    for ref in refacciones:
+        st.image(ref["Imagen_URL"], caption=f"{ref['Nombre']} (Cantidad: {ref['Cantidad']})")
