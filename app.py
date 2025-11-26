@@ -4,7 +4,7 @@ from PyPDF2 import PdfReader
 import os
 
 # Configuración
-st.set_page_config(page_title="Chat con PDF", layout="wide")
+st.set_page_config(page_title="IA Chat Mtto", layout="wide")
 st.title("📘 IA Mtto")
 
 # Configurar API Key
