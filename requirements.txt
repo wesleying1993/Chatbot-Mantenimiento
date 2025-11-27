@@ -1,6 +1,6 @@
 streamlit
+openai
 gspread
 oauth2client
+google-api-python-client
 PyPDF2
-openai
-pandas
