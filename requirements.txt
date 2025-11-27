@@ -1,6 +1,5 @@
 streamlit
-openai>=1.0.0
-pypdf2
-
-
-
+gspread
+oauth2client
+PyPDF2
+openai
