@@ -7,157 +7,103 @@ from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
+import re
 
-# ============================
-# Configuración de página
-# ============================
 st.set_page_config(page_title="IA Mantenimiento", layout="wide")
 st.title("🔧 Plataforma IA para Mantenimiento")
 
-# ============================
+# -----------------------
+# Validar secrets mínimos
+# -----------------------
+required_secrets = ["OPENAI_API_KEY", "DRIVE_FOLDER_ID", "google"]
+missing = [s for s in required_secrets if s not in st.secrets]
+if missing:
+    st.error(f"Faltan secrets requeridos: {missing}. Añádelos en Settings > Secrets.")
+    st.stop()
+
+# -----------------------
 # OpenAI
-# ============================
+# -----------------------
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# ============================
-# Google Credentials
-# ============================
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-
+# -----------------------
+# Google Creds & clients
+# -----------------------
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = st.secrets["google"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
 
-# ============================
-# Google Drive
-# ============================
-drive_service = build('drive', 'v3', credentials=creds)
+try:
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    drive_service = build("drive", "v3", credentials=creds, cache_discovery=False)
+except Exception as e:
+    st.exception("Error al inicializar credenciales de Google. Revisa st.secrets['google'].")
+    st.stop()
 
-def subir_imagen_drive(imagen_file):
-    """Sube imagen a Google Drive y regresa URL pública"""
-    file_metadata = {
-        'name': imagen_file.name,
-        'parents': [st.secrets["DRIVE_FOLDER_ID"]]
-    }
-    imagen_bytes = io.BytesIO(imagen_file.getvalue())
-    media = MediaIoBaseUpload(imagen_bytes, mimetype=imagen_file.type, resumable=True)
-    file = drive_service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id'
-    ).execute()
-    
-    imagen_id = file.get('id')
+DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
 
-    drive_service.permissions().create(
-        fileId=imagen_id,
-        body={'type': 'anyone', 'role': 'reader'}
-    ).execute()
-
-    return f"https://drive.google.com/uc?id={imagen_id}"
-
-# ============================
-# Acceso a BD
-# ============================
-sheet_mtto = client.open("MiBaseMtto").worksheet("Mantenimientos")
-sheet_ref = client.open("MiBaseMtto").worksheet("Refacciones")
-
-# ============================
-# Tabs
-# ============================
-tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Manual", "Mantenimientos", "Refacciones"])
-
-# ======================================================
-# TAB CHATBOT
-# ======================================================
-with tab1:
-    st.header("💬 Chat IA - Soporte Técnico")
-
-    uploaded_file = st.file_uploader("Sube tu manual en PDF", type="pdf")
-    question = st.text_input("Pregunta:")
-
-    if uploaded_file and question:
-        pdf_reader = PdfReader(uploaded_file)
-        text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
-
-        prompt = (
-            "Actúa como un ingeniero de mantenimiento experto. "
-            "Responde de forma breve, con pasos prácticos si aplica. "
-            f"Usa el siguiente texto como referencia:\n\n{text[:4000]}\n\nPregunta:\n{question}"
-        )
-
-        with st.spinner("Procesando respuesta..."):
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=300
-            )
-        st.write("**Respuesta:**")
-        st.success(response["choices"][0]["message"]["content"])
-
-# ======================================================
-# TAB MANUAL
-# ======================================================
-with tab2:
-    st.header("📘 Manual")
-    if uploaded_file:
-        st.download_button("Descargar PDF", data=uploaded_file.read(), file_name="manual.pdf")
-    else:
-        st.info("Sube un PDF en la pestaña Chatbot")
-
-# ======================================================
-# TAB MANTENIMIENTOS
-# ======================================================
-with tab3:
-    st.header("📋 Historial de Mantenimiento")
-
-    datos = sheet_mtto.get_all_values()
+# -----------------------
+# Helpers
+# -----------------------
+def safe_df_from_sheet(spreadsheet_name: str, worksheet_name: str) -> pd.DataFrame:
+    """Lee la hoja de Google Sheets y retorna un DataFrame saneado."""
+    try:
+        ws = client.open(spreadsheet_name).worksheet(worksheet_name)
+    except Exception as e:
+        st.error(f"No pude abrir '{spreadsheet_name}' -> hoja '{worksheet_name}'. Revisa permisos y nombres.")
+        st.stop()
+    datos = ws.get_all_values()
+    if not datos or len(datos) < 1:
+        return pd.DataFrame()
     df = pd.DataFrame(datos[1:], columns=datos[0])
+    df = df.fillna("").astype(str)
+    return df
 
-    st.dataframe(df)
+def extract_drive_id(url: str) -> str | None:
+    """Extrae el id de Drive de varios formatos de links."""
+    if not url:
+        return None
+    url = url.strip()
+    # direct uc?id=...
+    m = re.search(r"uc\?id=([A-Za-z0-9_-]+)", url)
+    if m:
+        return m.group(1)
+    # /file/d/<id>/
+    m = re.search(r"/file/d/([A-Za-z0-9_-]+)", url)
+    if m:
+        return m.group(1)
+    # open?id=...
+    m = re.search(r"open\?id=([A-Za-z0-9_-]+)", url)
+    if m:
+        return m.group(1)
+    # if url is just an id
+    if re.fullmatch(r"[A-Za-z0-9_-]{10,}", url):
+        return url
+    return None
 
-    st.subheader("📸 Imágenes de evidencia:")
-    for i, row in df.iterrows():
-        if row["Imagen Evidencia"]:
-            st.image(row["Imagen Evidencia"], width=200, caption=row["Equipo"])
+def to_public_uc_url(url: str) -> str:
+    """Convierte un enlace cualquiera de Drive a https://drive.google.com/uc?id=ID si es posible."""
+    drive_id = extract_drive_id(url)
+    if drive_id:
+        return f"https://drive.google.com/uc?id={drive_id}"
+    return url
 
-    st.subheader("✍️ Registrar mantenimiento")
+def is_valid_image_url(url: str) -> bool:
+    """Chequeo simple: es URL y no vacío (may be improved)."""
+    if not url or url.lower() in ("none", "nan", "nan.0", ""):
+        return False
+    return url.startswith("http://") or url.startswith("https://")
 
-    with st.form("registro_mantenimiento"):
-        fecha = st.date_input("Fecha")
-        equipo = st.text_input("Equipo")
-        descripcion = st.text_area("Descripción")
-        responsable = st.text_input("Responsable")
-        imagen = st.file_uploader("Evidencia fotográfica", type=["jpg", "jpeg", "png"])
-
-        enviar = st.form_submit_button("Guardar")
-
-        if enviar:
-            if imagen:
-                url_imagen = subir_imagen_drive(imagen)
-            else:
-                url_imagen = ""
-
-            sheet_mtto.append_row([str(fecha), equipo, descripcion, responsable, url_imagen])
-
-            st.success("Mantenimiento registrado")
-            st.experimental_rerun()
-
-# ======================================================
-# TAB REFACCIONES
-# ======================================================
-with tab4:
-    st.header("🔩 Refacciones")
-
-    datos_r = sheet_ref.get_all_values()
-    df_r = pd.DataFrame(datos_r[1:], columns=datos_r[0])
-    st.dataframe(df_r)
-
-    st.subheader("📸 Imagenes de Refacciones:")
-    for i, row in df_r.iterrows():
-        if row["Imagen_URL"]:
-            st.image(row["Imagen_URL"], width=200, caption=row["Nombre"])
+def upload_file_to_drive(uploaded_file) -> str:
+    """
+    Sube un archivo a Drive y retorna URL pública tipo uc?id=...
+    uploaded_file: Streamlit UploadedFile
+    """
+    try:
+        file_bytes = io.BytesIO(uploaded_file.getvalue())
+        mime = uploaded_file.type if uploaded_file.type else "application/octet-stream"
+        metadata = {
+            "name": uploaded_file.name,
+            "parents": [DRIVE_FOLDER_ID]
+        }
+        media = MediaIoBase
