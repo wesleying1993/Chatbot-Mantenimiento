@@ -3,3 +3,4 @@ gspread
 oauth2client
 PyPDF2
 openai
+pandas
