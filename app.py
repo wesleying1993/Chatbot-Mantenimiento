@@ -1,9 +1,8 @@
 import streamlit as st
-from openai import OpenAI
+import openai
 from PyPDF2 import PdfReader
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import os
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
@@ -17,7 +16,7 @@ st.title("🔧 Plataforma IA para Mantenimiento")
 # ============================
 # OpenAI
 # ============================
-client_openai = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ============================
 # Google Credentials
@@ -49,10 +48,10 @@ def subir_imagen_drive(imagen_file):
         media_body=media,
         fields='id'
     ).execute()
-    
+
     imagen_id = file.get('id')
-    
-    # hacer pública
+
+    # hacerlo público
     drive_service.permissions().create(
         fileId=imagen_id,
         body={'type': 'anyone', 'role': 'reader'}
@@ -91,7 +90,7 @@ with tab1:
         )
 
         with st.spinner("Procesando..."):
-            response = client_openai.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
@@ -134,4 +133,3 @@ with tab3:
 
             st.success("Registro guardado correctamente")
             st.experimental_rerun()
-
