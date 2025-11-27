@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from PyPDF2 import PdfReader
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -17,7 +17,7 @@ st.title("🔧 Plataforma IA para Mantenimiento")
 # ============================
 # OpenAI
 # ============================
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client_openai = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ============================
 # Google Credentials
@@ -51,13 +51,20 @@ def subir_imagen_drive(imagen_file):
     ).execute()
     
     imagen_id = file.get('id')
+    
+    # hacer pública
+    drive_service.permissions().create(
+        fileId=imagen_id,
+        body={'type': 'anyone', 'role': 'reader'}
+    ).execute()
+
     return f"https://drive.google.com/uc?id={imagen_id}"
 
 # ============================
 # Acceso a BD
 # ============================
 sheet_mtto = client.open("MiBaseMtto").worksheet("Mantenimientos")
-sheet_refacciones = client.open("MiBaseMtto").worksheet("Refacciones")
+sheet_ref = client.open("MiBaseMtto").worksheet("Refacciones")
 
 # ============================
 # Tabs
@@ -68,31 +75,63 @@ tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Manual", "Mantenimientos", "Refacc
 # TAB CHATBOT
 # ======================================================
 with tab1:
-    st.header("💬 Chat con IA")
+    st.header("💬 Chat IA - Soporte Técnico")
+
     uploaded_file = st.file_uploader("Sube tu manual en PDF", type="pdf")
+    question = st.text_input("Pregunta:")
 
-    if uploaded_file:
+    if uploaded_file and question:
         pdf_reader = PdfReader(uploaded_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() or ""
+        text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
 
-        st.success("Texto extraído correctamente")
+        prompt = (
+            "Actúa como un ingeniero de mantenimiento experto. "
+            "Responde de forma breve, con pasos prácticos si aplica. "
+            f"Usa el siguiente texto como referencia:\n\n{text[:4000]}\n\nPregunta:\n{question}"
+        )
 
-        question = st.text_input("Escribe tu pregunta:")
-        if question:
-            with st.spinner("Consultando IA..."):
-                prompt = (
-                    "Actúa como un ingeniero de mantenimiento experto. "
-                    "Responde de forma breve y clara, con pasos prácticos si aplica. "
-                    f"Usa el siguiente texto como referencia:\n\n{text[:4000]}\n\nPregunta:\n{question}"
-                )
+        with st.spinner("Procesando..."):
+            response = client_openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=300
+            )
+        st.write("**Respuesta:**", response["choices"][0]["message"]["content"])
 
-                response = openai.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.2,
-    max_tokens=300
-)
-st.write("**Respuesta:**", response.choices[0].message.content)
+
+# ======================================================
+# TAB MANTENIMIENTOS
+# ======================================================
+with tab3:
+    st.subheader("📋 Historial de Mantenimiento (arriba)")
+    data = sheet_mtto.get_all_values()
+    st.write(data)
+
+    st.subheader("✍️ Registrar Mantenimiento (abajo)")
+
+    with st.form("registro_mtto"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fecha = st.date_input("Fecha de mantenimiento")
+            equipo = st.text_input("Equipo")
+            descripcion = st.text_area("Descripción")
+
+        with col2:
+            responsable = st.text_input("Responsable")
+            imagen = st.file_uploader("Foto evidencia", type=["jpg", "jpeg", "png"])
+
+        submit = st.form_submit_button("Guardar")
+
+        if submit:
+            if imagen:
+                url_imagen = subir_imagen_drive(imagen)
+            else:
+                url_imagen = ""
+
+            sheet_mtto.append_row([str(fecha), equipo, descripcion, responsable, url_imagen])
+
+            st.success("Registro guardado correctamente")
+            st.experimental_rerun()
 
