@@ -2,6 +2,7 @@ import streamlit as st
 import openai
 from PyPDF2 import PdfReader
 import gspread
+import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -48,10 +49,9 @@ def subir_imagen_drive(imagen_file):
         media_body=media,
         fields='id'
     ).execute()
-
+    
     imagen_id = file.get('id')
 
-    # hacerlo público
     drive_service.permissions().create(
         fileId=imagen_id,
         body={'type': 'anyone', 'role': 'reader'}
@@ -89,41 +89,54 @@ with tab1:
             f"Usa el siguiente texto como referencia:\n\n{text[:4000]}\n\nPregunta:\n{question}"
         )
 
-        with st.spinner("Procesando..."):
+        with st.spinner("Procesando respuesta..."):
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 max_tokens=300
             )
-        st.write("**Respuesta:**", response["choices"][0]["message"]["content"])
+        st.write("**Respuesta:**")
+        st.success(response["choices"][0]["message"]["content"])
 
+# ======================================================
+# TAB MANUAL
+# ======================================================
+with tab2:
+    st.header("📘 Manual")
+    if uploaded_file:
+        st.download_button("Descargar PDF", data=uploaded_file.read(), file_name="manual.pdf")
+    else:
+        st.info("Sube un PDF en la pestaña Chatbot")
 
 # ======================================================
 # TAB MANTENIMIENTOS
 # ======================================================
 with tab3:
-    st.subheader("📋 Historial de Mantenimiento (arriba)")
-    data = sheet_mtto.get_all_values()
-    st.write(data)
+    st.header("📋 Historial de Mantenimiento")
 
-    st.subheader("✍️ Registrar Mantenimiento (abajo)")
+    datos = sheet_mtto.get_all_values()
+    df = pd.DataFrame(datos[1:], columns=datos[0])
 
-    with st.form("registro_mtto"):
-        col1, col2 = st.columns(2)
+    st.dataframe(df)
 
-        with col1:
-            fecha = st.date_input("Fecha de mantenimiento")
-            equipo = st.text_input("Equipo")
-            descripcion = st.text_area("Descripción")
+    st.subheader("📸 Imágenes de evidencia:")
+    for i, row in df.iterrows():
+        if row["Imagen Evidencia"]:
+            st.image(row["Imagen Evidencia"], width=200, caption=row["Equipo"])
 
-        with col2:
-            responsable = st.text_input("Responsable")
-            imagen = st.file_uploader("Foto evidencia", type=["jpg", "jpeg", "png"])
+    st.subheader("✍️ Registrar mantenimiento")
 
-        submit = st.form_submit_button("Guardar")
+    with st.form("registro_mantenimiento"):
+        fecha = st.date_input("Fecha")
+        equipo = st.text_input("Equipo")
+        descripcion = st.text_area("Descripción")
+        responsable = st.text_input("Responsable")
+        imagen = st.file_uploader("Evidencia fotográfica", type=["jpg", "jpeg", "png"])
 
-        if submit:
+        enviar = st.form_submit_button("Guardar")
+
+        if enviar:
             if imagen:
                 url_imagen = subir_imagen_drive(imagen)
             else:
@@ -131,5 +144,20 @@ with tab3:
 
             sheet_mtto.append_row([str(fecha), equipo, descripcion, responsable, url_imagen])
 
-            st.success("Registro guardado correctamente")
+            st.success("Mantenimiento registrado")
             st.experimental_rerun()
+
+# ======================================================
+# TAB REFACCIONES
+# ======================================================
+with tab4:
+    st.header("🔩 Refacciones")
+
+    datos_r = sheet_ref.get_all_values()
+    df_r = pd.DataFrame(datos_r[1:], columns=datos_r[0])
+    st.dataframe(df_r)
+
+    st.subheader("📸 Imagenes de Refacciones:")
+    for i, row in df_r.iterrows():
+        if row["Imagen_URL"]:
+            st.image(row["Imagen_URL"], width=200, caption=row["Nombre"])
