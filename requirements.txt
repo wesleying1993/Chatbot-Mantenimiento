@@ -1,7 +1,7 @@
 streamlit==1.40.2
+openai
+PyPDF2
 gspread
 oauth2client
 google-api-python-client
-PyPDF2
-openai
 pandas
