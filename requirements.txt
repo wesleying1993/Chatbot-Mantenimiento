@@ -3,4 +3,4 @@ PyPDF2
 gspread
 oauth2client
 google-api-python-client
-openai==1.46.0
+openai==0.28.0
