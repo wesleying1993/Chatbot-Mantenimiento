@@ -89,6 +89,10 @@ with tab1:
                 )
 
                 response = openai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2,
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": prompt}],
+    temperature=0.2,
+    max_tokens=300
+)
+st.write("**Respuesta:**", response.choices[0].message.content)
+
